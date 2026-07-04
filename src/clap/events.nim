@@ -6,11 +6,34 @@ type
         ceDONT_RECORD
     ClapEventFlags* = distinct uint32
 
+    # clap_transport_flags; ord == bit position in the raw flags word
+    ClapTransportFlag* {.size:sizeof(uint32).} = enum
+        ctHAS_TEMPO             # 1 << 0
+        ctHAS_BEATS_TIMELINE    # 1 << 1
+        ctHAS_SECONDS_TIMELINE  # 1 << 2
+        ctHAS_TIME_SIGNATURE    # 1 << 3
+        ctIS_PLAYING            # 1 << 4
+        ctIS_RECORDING          # 1 << 5
+        ctIS_LOOP_ACTIVE        # 1 << 6
+        ctIS_WITHIN_PRE_ROLL    # 1 << 7
+    ClapTransportFlags* = distinct uint32
+
 converter conv_clap_event_flags*(flags: set[ClapEventFlag]): ClapEventFlags =
     var res: uint32 = 0
     for f in flags:
         res = res or (1'u32 shl ord(f))
     return ClapEventFlags(res)
+
+converter conv_clap_transport_flags*(flags: set[ClapTransportFlag]): ClapTransportFlags =
+    var res: uint32 = 0
+    for f in flags:
+        res = res or (1'u32 shl ord(f))
+    return ClapTransportFlags(res)
+
+const
+    # clap/fixedpoint.h: beat/second times are fixed-point; divide by 2^31 to get units
+    CLAP_BEATTIME_FACTOR* = 1'i64 shl 31
+    CLAP_SECTIME_FACTOR*  = 1'i64 shl 31
 
 type
     ClapEventHeader* = object
@@ -85,18 +108,23 @@ type
         header   *: ClapEventHeader
         param_id *: ClapID
 
-    # ClapTransportFlag* {.size:sizeof(uint32).} = enum
-    #     ctHAS_TEMPO,
-    #     ctHAS_BEATS_TIMELINE,
-    #     ctHAS_SECONDS_TIMELINE,
-    #     ctHAS_TIME_SIGNATURE,
-    #     ctIS_PLAYING,
-    #     ctIS_RECORDING,
-    #     ctIS_LOOP_ACTIVE,
-    #     ctIS_WITHIN_PRE_ROLL
-    # ClapTransportFlags* = set[ClapTransportFlag]
-    # oops i forgot i wasn't implementing transport yet
-    # needs to be modified to be like the other flags
+    ClapEventTransport* = object
+        # mirror of clap_event_transport; fields in exact C order.
+        # beats/seconds fields are fixed-point: divide by 2^31 (see CLAP_*TIME_FACTOR).
+        header             *: ClapEventHeader
+        flags              *: ClapTransportFlags
+        song_pos_beats     *: int64   # clap_beattime
+        song_pos_seconds   *: int64   # clap_sectime
+        tempo              *: float64  # bpm
+        tempo_inc          *: float64  # tempo increment until next time-info event
+        loop_start_beats   *: int64
+        loop_end_beats     *: int64
+        loop_start_seconds *: int64
+        loop_end_seconds   *: int64
+        bar_start          *: int64
+        bar_number         *: int32   # bar at song pos 0 has number 0
+        tsig_num           *: uint16
+        tsig_denom         *: uint16
 
     ClapEventMidi* = object
         header     *: ClapEventHeader
@@ -120,7 +148,7 @@ type
         kindNoteExpr     *: ClapEventNoteExpression
         kindParamValMod  *: ClapEventParamValue
         kindParamGesture *: ClapEventParamGesture
-        # transport missing
+        kindTransport    *: ClapEventTransport
         kindMidi         *: ClapEventMidi
         kindMidiSysex    *: ClapEventMidiSysex
         kindMidi2        *: ClapEventMidi2

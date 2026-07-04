@@ -20,9 +20,9 @@ has futhark set up but commented out. to use, put clap repo files in `clap-main`
 - state
 - gui
 - timers
+- transport events
 
 ### known missing api sections (PRs welcome):
-- transport events
 - thread checking (basically empty file)
 - definitely others
 
